@@ -1,10 +1,10 @@
 import ast
-from io import StringIO
+import json
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 import pandas as pd
-
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 
 def _parse_js(js_text):
@@ -19,6 +19,7 @@ def _is_female_format(value):
 def _build_dataframe(matches):
     return pd.DataFrame({
         "date": [row[0] for row in matches],
+        "tournament": [row[1] for row in matches],
         "result": [row[4] for row in matches],
         "opponent_name": [row[11] for row in matches],
         "opponent_info": [row[16] for row in matches],
@@ -43,8 +44,12 @@ def _process_female(data):
 
 
 def _process_male(data):
-    data["opponent_age"] = pd.to_numeric(data["opponent_info"])
+    data["opponent_age"] = pd.to_numeric(
+        data["opponent_info"],
+        errors="coerce",
+    )
     return data
+
 
 def _add_player_age(data, player_dob):
     player_dob = pd.Timestamp(player_dob)
@@ -55,9 +60,7 @@ def _add_player_age(data, player_dob):
 
 
 def _add_match_columns(data):
-    data["age_diff"] = (
-        data["player_age"] - data["opponent_age"]
-    )
+    data["age_diff"] = data["player_age"] - data["opponent_age"]
     data["match_outcome"] = data["result"].map({
         "W": 1,
         "L": 0,
@@ -75,9 +78,8 @@ def _process_matches(matches, player_dob):
         data = _process_male(data)
 
     data = _add_player_age(data, player_dob)
-    data = _add_match_columns(data)
+    return _add_match_columns(data)
 
-    return data
 
 def _normalize_name(player_name):
     name = player_name.strip()
@@ -87,18 +89,82 @@ def _normalize_name(player_name):
 
     return name[0].upper() + name[1:]
 
+
+def _display_name(player_name):
+    name = player_name.strip()
+
+    if " " in name:
+        return " ".join(word.capitalize() for word in name.split())
+
+    return "".join(
+        f" {char}" if char.isupper() and i > 0 else char
+        for i, char in enumerate(name)
+    )
+
+
+def _download_url(url):
+    request = Request(
+        url,
+        headers={"User-Agent": "tennisplot/0.1"},
+    )
+    with urlopen(request) as response:
+        return response.read().decode("utf-8")
+
+
 def _download_js(player_name):
     name = _normalize_name(player_name)
-    url = f"https://www.tennisabstract.com/jsmatches/{name}Career.js"
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    url = (
+        "https://www.tennisabstract.com/"
+        f"jsmatches/{name}Career.js"
+    )
 
     try:
-        with urlopen(request) as response:
-            return response.read().decode("utf-8")
+        return _download_url(url)
     except HTTPError as error:
-        raise ValueError(f"Player not found: {player_name}") from error
+        raise ValueError(
+            f"Player not found: {player_name}"
+        ) from error
 
-def get_player_matches(player_name, player_dob):
+
+def _find_wikidata_id(player_name):
+    params = urlencode({
+        "action": "wbsearchentities",
+        "search": _display_name(player_name),
+        "language": "en",
+        "format": "json",
+        "limit": 1,
+    })
+    data = json.loads(
+        _download_url(
+            f"https://www.wikidata.org/w/api.php?{params}"
+        )
+    )
+    if not data["search"]:
+        raise ValueError(f"Player not found: {player_name}")
+    return data["search"][0]["id"]
+
+
+def _get_player_dob(player_name):
+    entity_id = _find_wikidata_id(player_name)
+    url = (
+        "https://www.wikidata.org/wiki/"
+        f"Special:EntityData/{entity_id}.json"
+    )
+    data = json.loads(_download_url(url))
+    claims = data["entities"][entity_id]["claims"]
+
+    if "P569" not in claims:
+        raise ValueError(
+            f"Could not determine birth date for: {player_name}"
+        )
+
+    value = claims["P569"][0]["mainsnak"]["datavalue"]["value"]["time"]
+    return pd.to_datetime(value[1:11])
+
+
+def get_player_matches(player_name):
     js_text = _download_js(player_name)
+    player_dob = _get_player_dob(player_name)
     matches = _parse_js(js_text)
+
     return _process_matches(matches, player_dob)
