@@ -24,4 +24,31 @@ Import the two public functions:
 from tennisplot import get_player_matches, plot_age_difference
 ```
 
+### For Serena Williams
+```
+serena = get_player_matches("Serena Williams")
+plot_age_difference(serena)
+```
+
+The player name can also be written in different formats:
+```
+serena = get_player_matches("serena williams")
+serena = get_player_matches("SerenaWilliams")
+```
+
+### For Rafael Nadal
+```
+nadal = get_player_matches("Rafael Nadal")
+plot_age_difference(nadal)
+```
+
+### For Invalid Players
+If the player cannot be found, the function returns a meaningful error:
+```
+get_player_matches("GastonSanchez")
+```
+Which raises:
+```
+ValueError: Player not found: GastonSanchez
+```
 
