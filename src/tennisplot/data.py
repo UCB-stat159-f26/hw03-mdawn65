@@ -3,6 +3,9 @@ from io import StringIO
 
 import pandas as pd
 
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
 
 def _parse_js(js_text):
     text = js_text.replace("var morematchmx =", "", 1).strip().rstrip(";")
@@ -75,3 +78,27 @@ def _process_matches(matches, player_dob):
     data = _add_match_columns(data)
 
     return data
+
+def _normalize_name(player_name):
+    name = player_name.strip()
+
+    if " " in name:
+        return "".join(word.capitalize() for word in name.split())
+
+    return name[0].upper() + name[1:]
+
+def _download_js(player_name):
+    name = _normalize_name(player_name)
+    url = f"https://www.tennisabstract.com/jsmatches/{name}Career.js"
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+
+    try:
+        with urlopen(request) as response:
+            return response.read().decode("utf-8")
+    except HTTPError as error:
+        raise ValueError(f"Player not found: {player_name}") from error
+
+def get_player_matches(player_name, player_dob):
+    js_text = _download_js(player_name)
+    matches = _parse_js(js_text)
+    return _process_matches(matches, player_dob)
