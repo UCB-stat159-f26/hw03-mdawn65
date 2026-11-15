@@ -27,7 +27,7 @@ def _clean_dates(data):
     return data
 
 
-def _process_female(data, player_dob):
+def _process_female(data):
     opponent_dob = pd.to_datetime(
         data["opponent_info"],
         format="%Y%m%d",
@@ -41,4 +41,37 @@ def _process_female(data, player_dob):
 
 def _process_male(data):
     data["opponent_age"] = pd.to_numeric(data["opponent_info"])
+    return data
+
+def _add_player_age(data, player_dob):
+    player_dob = pd.Timestamp(player_dob)
+    data["player_age"] = (
+        (data["date"] - player_dob).dt.days / 365.25
+    )
+    return data
+
+
+def _add_match_columns(data):
+    data["age_diff"] = (
+        data["player_age"] - data["opponent_age"]
+    )
+    data["match_outcome"] = data["result"].map({
+        "W": 1,
+        "L": 0,
+    })
+    return data
+
+
+def _process_matches(matches, player_dob):
+    data = _build_dataframe(matches)
+    data = _clean_dates(data)
+
+    if _is_female_format(data["opponent_info"].iloc[0]):
+        data = _process_female(data)
+    else:
+        data = _process_male(data)
+
+    data = _add_player_age(data, player_dob)
+    data = _add_match_columns(data)
+
     return data
