@@ -18,3 +18,10 @@ pip install git+https://github.com/UCB-stat159-f26/hw03-mdawn65.git
 ```
 
 ## Usage
+
+Import the two public functions:
+```
+from tennisplot import get_player_matches, plot_age_difference
+```
+
+
